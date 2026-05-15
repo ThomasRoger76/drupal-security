@@ -460,3 +460,371 @@ grep -r "trusted_host_patterns" web/sites/default/settings.php  # Doit être con
 ls web/sites/default/files/.htaccess  # Doit exister
 curl -I https://monsite.com | grep -E "X-Frame|X-Content|Strict-Transport"  # Headers sécurité
 ```
+
+---
+
+## RGPD — Droit à l'Effacement et Export des Données
+
+### Vue d'ensemble RGPD
+
+Le Règlement Général sur la Protection des Données (RGPD / GDPR) impose plusieurs obligations aux sites Drupal qui collectent des données personnelles. Les trois principaux droits à implémenter sont : le droit à l'effacement (Art. 17), la portabilité des données (Art. 20), et la transparence du consentement (Directive ePrivacy).
+
+---
+
+### 1. Droit à l'effacement (Right to Erasure — Article 17)
+
+```php
+use Drupal\user\UserInterface;
+use Drupal\Core\Cache\Cache;
+
+/**
+ * Implements hook_user_cancel().
+ *
+ * Anonymiser les données custom liées à l'utilisateur lors de l'annulation
+ * de compte. Appelé AVANT la suppression effective selon la méthode choisie.
+ *
+ * Méthodes disponibles :
+ *   - user_cancel_block            : bloquer le compte
+ *   - user_cancel_block_unpublish  : bloquer + dépublier le contenu
+ *   - user_cancel_reassign         : réassigner le contenu à l'uid 0
+ *   - user_cancel_delete           : supprimer le compte et le contenu
+ */
+function mon_module_user_cancel(
+  array $edit,
+  UserInterface $account,
+  string $method
+): void {
+  // Anonymiser les données custom liées à cet utilisateur
+  \Drupal::database()->update('mon_module_data')
+    ->fields([
+      'email' => 'anonymise_' . $account->id() . '@supprime.invalid',
+      'name'  => 'Utilisateur supprimé',
+      'phone' => '',
+      'ip'    => '0.0.0.0',
+    ])
+    ->condition('uid', $account->id())
+    ->execute();
+
+  // Logger l'action (sans données personnelles)
+  \Drupal::logger('mon_module')->info(
+    'Données anonymisées pour uid @uid via méthode @method.',
+    ['@uid' => $account->id(), '@method' => $method]
+  );
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_predelete() pour user.
+ *
+ * Nettoyer TOUTES les données liées à l'utilisateur avant la suppression
+ * définitive. Appelé juste avant que l'entité user soit supprimée.
+ */
+function mon_module_user_predelete(UserInterface $account): void {
+  $uid = $account->id();
+
+  // Supprimer les soumissions de formulaires liées à cet utilisateur
+  \Drupal::database()->delete('mon_module_submissions')
+    ->condition('uid', $uid)
+    ->execute();
+
+  // Supprimer les données de profil étendu
+  \Drupal::database()->delete('mon_module_profils')
+    ->condition('uid', $uid)
+    ->execute();
+
+  // Supprimer les fichiers privés de l'utilisateur
+  $files = \Drupal::entityTypeManager()
+    ->getStorage('file')
+    ->loadByProperties(['uid' => $uid, 'uri' => 'private://%']);
+
+  foreach ($files as $file) {
+    $file->delete();
+  }
+
+  // Invalider le cache associé
+  Cache::invalidateTags(['user:' . $uid, 'mon_module_user:' . $uid]);
+}
+```
+
+---
+
+### 2. Export des données utilisateur (Right to Data Portability — Article 20)
+
+```php
+use Drupal\Core\Controller\ControllerBase;
+use Drupal\user\UserInterface;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Response;
+
+// src/Controller/GdprExportController.php
+class GdprExportController extends ControllerBase {
+
+  /**
+   * Exporter toutes les données personnelles d'un utilisateur.
+   *
+   * Route : /mon-module/gdpr/export/{user}
+   * Requirements : _entity_access: 'user.view' + contrôle que l'uid correspond
+   */
+  public function exportUserData(UserInterface $user): Response {
+    // Vérifier que l'utilisateur ne peut exporter que SES données
+    // (sauf admin avec permission 'administer users')
+    $current_user = $this->currentUser();
+    if ($current_user->id() !== $user->id()
+        && !$current_user->hasPermission('administer users')) {
+      throw new \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException();
+    }
+
+    $data = [
+      'export_date' => date('Y-m-d\TH:i:s\Z'),
+      'profil'      => [
+        'uid'               => $user->id(),
+        'nom_affiche'       => $user->getDisplayName(),
+        'email'             => $user->getEmail(),
+        'date_inscription'  => date('Y-m-d', $user->getCreatedTime()),
+        'derniere_connexion' => $user->getLastLoginTime()
+          ? date('Y-m-d\TH:i:s', $user->getLastLoginTime())
+          : NULL,
+        'langues'           => $user->getPreferredLangcode(),
+        'roles'             => array_values($user->getRoles(TRUE)),
+      ],
+      'soumissions'    => $this->getSubmissions($user),
+      'commentaires'   => $this->getComments($user),
+      'historique'     => $this->getHistorique($user),
+    ];
+
+    $filename = 'mes-donnees-' . $user->id() . '-' . date('Y-m-d') . '.json';
+    $json     = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+
+    $response = new Response($json);
+    $response->headers->set('Content-Type', 'application/json; charset=utf-8');
+    $response->headers->set('Content-Disposition', 'attachment; filename="' . $filename . '"');
+    $response->headers->set('X-Robots-Tag', 'noindex');
+    return $response;
+  }
+
+  /**
+   * @return array<int, array{id: int, date: string, titre: string}>
+   */
+  private function getSubmissions(UserInterface $user): array {
+    $rows = \Drupal::database()
+      ->select('mon_module_submissions', 's')
+      ->fields('s', ['id', 'created', 'titre'])
+      ->condition('uid', $user->id())
+      ->orderBy('created', 'DESC')
+      ->execute()
+      ->fetchAll();
+
+    return array_map(fn($row) => [
+      'id'    => (int) $row->id,
+      'date'  => date('Y-m-d', $row->created),
+      'titre' => $row->titre,
+    ], $rows);
+  }
+
+  private function getComments(UserInterface $user): array {
+    return \Drupal::entityTypeManager()
+      ->getStorage('comment')
+      ->loadByProperties(['uid' => $user->id()])
+      |> array_map(fn($c) => [
+        'id'       => $c->id(),
+        'date'     => date('Y-m-d', $c->getCreatedTime()),
+        'contenu'  => $c->get('comment_body')->value,
+        'noeud_id' => $c->getCommentedEntityId(),
+      ], $$);
+  }
+
+  private function getHistorique(UserInterface $user): array {
+    // Exemple : historique de connexion depuis dblog
+    return \Drupal::database()
+      ->select('watchdog', 'w')
+      ->fields('w', ['timestamp', 'message'])
+      ->condition('uid', $user->id())
+      ->condition('type', 'user')
+      ->orderBy('timestamp', 'DESC')
+      ->range(0, 100)
+      ->execute()
+      ->fetchAll(\PDO::FETCH_ASSOC);
+  }
+}
+```
+
+---
+
+### 3. Consentement aux cookies — Module eu_cookie_compliance
+
+```bash
+# Installation
+composer require drupal/eu_cookie_compliance
+docker compose exec php drush en eu_cookie_compliance -y
+docker compose exec php drush cr
+```
+
+```php
+// settings.php — configuration du consentement (opt-in obligatoire RGPD)
+$config['eu_cookie_compliance.settings']['popup_enabled']          = TRUE;
+$config['eu_cookie_compliance.settings']['method']                 = 'opt_in';   // opt_in = RGPD strict
+$config['eu_cookie_compliance.settings']['cookie_lifetime']        = 365;        // jours
+$config['eu_cookie_compliance.settings']['popup_position']         = 'bottom';
+$config['eu_cookie_compliance.settings']['disagree_do_not_show_ui'] = TRUE;
+
+// Catégories de cookies (opt-in granulaire)
+$config['eu_cookie_compliance.settings']['cookie_categories'] = [
+  'essential'   => ['label' => 'Essentiels',   'status' => TRUE,  'required' => TRUE],
+  'analytics'   => ['label' => 'Analytiques',  'status' => FALSE, 'required' => FALSE],
+  'marketing'   => ['label' => 'Marketing',    'status' => FALSE, 'required' => FALSE],
+  'preferences' => ['label' => 'Préférences',  'status' => FALSE, 'required' => FALSE],
+];
+```
+
+```javascript
+// Vérifier le consentement en JavaScript avant de charger des scripts tiers
+if (typeof Drupal !== 'undefined' && typeof drupalSettings.eu_cookie_compliance !== 'undefined') {
+  const hasConsent = drupalSettings.eu_cookie_compliance.currentStatus;
+
+  if (hasConsent === 1 || hasConsent === 2) {
+    // L'utilisateur a accepté — charger Google Analytics, etc.
+    loadAnalytics();
+  }
+}
+```
+
+---
+
+### 4. Durée de rétention des données — Politique de nettoyage
+
+```php
+// settings.php — limiter la rétention des logs Drupal
+$config['system.logging']['error_level'] = 'hide';         // Masquer les erreurs en prod
+$config['dblog.settings']['row_limit']   = 1000;           // Max 1000 entrées (dblog)
+
+// Mieux : désactiver dblog en prod et utiliser syslog (pas de PII en base)
+// $modules_to_disable = ['dblog'];
+// $settings['config_exclude_modules'] = ['dblog'];
+```
+
+```php
+// hook_cron — nettoyer automatiquement les données périmées
+use Drupal\Core\Database\Database;
+
+/**
+ * Implements hook_cron().
+ *
+ * Nettoyage RGPD : supprimer les données de plus de 2 ans.
+ * Conformément à l'article 5 du RGPD (limitation de la conservation).
+ */
+function mon_module_cron(): void {
+  $retention_days = \Drupal::config('mon_module.settings')->get('retention_days') ?? 730;
+  $cutoff = \Drupal::time()->getRequestTime() - ($retention_days * 86400);
+
+  // Supprimer les soumissions anonymes anciennes
+  $deleted = \Drupal::database()
+    ->delete('mon_module_submissions')
+    ->condition('uid', 0)                // Uniquement les soumissions anonymes
+    ->condition('created', $cutoff, '<')
+    ->execute();
+
+  if ($deleted > 0) {
+    \Drupal::logger('mon_module')->info(
+      'RGPD cron : @count soumissions anonymes supprimées (> @days jours).',
+      ['@count' => $deleted, '@days' => $retention_days]
+    );
+  }
+
+  // Anonymiser les logs watchdog contenant des emails
+  // (préférer syslog en production pour éviter ce problème)
+  \Drupal::database()
+    ->update('watchdog')
+    ->expression('message', "REGEXP_REPLACE(message, '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\\\.[a-zA-Z]{2,}', '[email masqué]')")
+    ->condition('timestamp', $cutoff, '<')
+    ->execute();
+}
+```
+
+---
+
+### 5. Modules RGPD recommandés
+
+```bash
+# Module GDPR complet (audit des champs PII, droit à l'oubli, export)
+composer require drupal/gdpr
+docker compose exec php drush en gdpr gdpr_fields gdpr_consent -y
+
+# Consentement cookies (bannière, opt-in/opt-out)
+composer require drupal/eu_cookie_compliance
+docker compose exec php drush en eu_cookie_compliance -y
+
+# Politique de confidentialité (lien obligatoire RGPD)
+# Créer un nœud "Politique de confidentialité" et le configurer :
+# /admin/config/people/accounts → Privacy Policy page
+
+# Purge des données utilisateur lors de la suppression
+composer require drupal/user_data_deletion
+docker compose exec php drush en user_data_deletion -y
+```
+
+---
+
+### 6. Masquer les PII dans les logs Watchdog
+
+```php
+// EventSubscriber pour masquer les données personnelles dans les logs
+use Drupal\Core\Logger\RfcLogLevel;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+
+class GdprLogSubscriber implements EventSubscriberInterface {
+
+  public static function getSubscribedEvents(): array {
+    return [\Drupal\Core\Logger\LoggerChannel::class => ['onLog', 100]];
+  }
+
+  // Ou via hook_watchdog_log() dans .module :
+}
+
+/**
+ * Implements hook_watchdog_log().
+ *
+ * Masquer les données personnelles dans les logs avant persistance.
+ */
+function mon_module_watchdog_log(array $log_entry): void {
+  // On ne peut pas modifier ici — utiliser un Logger custom à la place.
+  // Voir : \Drupal\Core\Logger\LoggerChannelInterface
+}
+
+// Approche recommandée : Logger Decorator
+// src/Logger/GdprLogger.php
+use Drupal\Core\Logger\RfcLoggerTrait;
+use Psr\Log\LoggerInterface;
+
+class GdprLogger implements LoggerInterface {
+  use RfcLoggerTrait;
+
+  public function __construct(private readonly LoggerInterface $inner) {}
+
+  public function log($level, $message, array $context = []): void {
+    // Masquer les emails dans le message
+    $message = preg_replace(
+      '/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/',
+      '[email masqué]',
+      (string) $message
+    );
+    // Masquer les IPs si nécessaire
+    $message = preg_replace('/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/', '[ip masquée]', $message);
+
+    $this->inner->log($level, $message, $context);
+  }
+}
+```
+
+---
+
+### 7. Anti-patterns RGPD
+
+| ❌ | ✅ | Raison |
+|----|----|--------|
+| Logs avec emails en clair dans watchdog | Hasher/masquer les emails avant persistance (`preg_replace`) | Fuite PII dans les logs — Art. 5 RGPD |
+| Durée de rétention illimitée des données | `hook_cron` de nettoyage avec seuil configurable | Obligation RGPD article 5 — limitation conservation |
+| Consentement opt-out (pré-coché) | Opt-in explicite pour les cookies non essentiels | Directive ePrivacy + CNIL |
+| Exporter les données sans contrôle d'accès | Vérifier `$current_user->id() === $user->id()` | Fuite de données entre utilisateurs |
+| `hook_user_cancel` sans anonymiser les données liées | Anonymiser TOUTES les tables custom liées à l'UID | Obligation droit à l'effacement Art. 17 |
+| Stocker les logs indéfiniment en base (dblog) | Limiter via `dblog.settings.row_limit` ou désactiver dblog | PII exposées indéfiniment |
+| `row_limit: 0` dans dblog.settings | Minimum `row_limit: 1000` avec rotation | 0 = illimité, problème RGPD + performance |
+| Données personnelles dans l'URL (GET params) | POST ou identifiants opaques en URL | URLs logguées par les proxies et navigateurs |

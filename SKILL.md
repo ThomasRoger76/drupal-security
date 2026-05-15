@@ -78,6 +78,14 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Scanner les dépendances Composer pour CVE | `composer audit` + `drush pm:security` en CI | [key-tfa.md](key-tfa.md) |
 | Scan OWASP des modules custom | OWASP Dependency-Check `--failOnCVSS 7` | [key-tfa.md](key-tfa.md) |
 | Vérifier les headers de sécurité après déploiement | `curl -si` + grep des headers attendus | [key-tfa.md](key-tfa.md) |
+| Droit à l'effacement RGPD (Art. 17) | `hook_user_cancel` + `hook_user_predelete` | [security-audit.md](security-audit.md) |
+| Export des données utilisateur (portabilité Art. 20) | Controller JSON + vérification `current_user->id()` | [security-audit.md](security-audit.md) |
+| Consentement cookies RGPD (opt-in) | Module `eu_cookie_compliance` + `method: opt_in` | [security-audit.md](security-audit.md) |
+| Nettoyage automatique des données périmées | `hook_cron` avec seuil de rétention configurable | [security-audit.md](security-audit.md) |
+| Masquer les PII dans les logs watchdog | Logger Decorator + `preg_replace` sur emails/IPs | [security-audit.md](security-audit.md) |
+| Authentification JWT sans OAuth2 | Module `drupal/jwt` + `JwtAuth::generateToken()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Valider un JWT custom (sans module contrib) | `Firebase\JWT\JWT::decode()` + vérif `uid` + `isActive()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Renouvellement de token JWT | Endpoint `/api/auth/refresh` + validation du token existant | [jsonapi-oauth.md](jsonapi-oauth.md) |
 
 ## Anti-Patterns Critiques
 

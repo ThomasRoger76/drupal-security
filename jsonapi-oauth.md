@@ -264,3 +264,273 @@ class JsonApiRateLimitSubscriber implements EventSubscriberInterface {
 | Token OAuth2 en localStorage | Stocker dans httpOnly cookie ou mémoire | XSS token theft |
 | Pas de validation de scope OAuth | Configurer les scopes par rôle Drupal | Privilege escalation |
 | `/jsonapi` accessible sans HTTPS | HTTPS obligatoire + HSTS | Interception de tokens |
+
+---
+
+## 7. JWT Standalone — JSON Web Tokens sans Simple OAuth
+
+Pour les projets qui ont besoin de JWT mais pas du protocole OAuth2 complet (ex : API interne, microservices, mobile sans authorization code flow).
+
+### Installation
+
+```bash
+composer require drupal/jwt
+docker compose exec php drush en jwt -y
+docker compose exec php drush cr
+```
+
+### Configurer la clé JWT
+
+```bash
+# Générer une clé HMAC-SHA256 (stocker hors du webroot)
+openssl rand -base64 64 > /var/www/private/jwt.key
+
+# Ou générer une paire RSA (recommandé pour RS256)
+openssl genpkey -algorithm RSA -out /var/www/private/jwt_private.key -pkeyopt rsa_keygen_bits:2048
+openssl rsa -pubout -in /var/www/private/jwt_private.key -out /var/www/private/jwt_public.key
+```
+
+```php
+// settings.php — configurer le module JWT avec la clé Key module
+$config['jwt.config']['algorithm']  = 'RS256';   // ou 'HS256' pour HMAC
+$config['jwt.config']['key_id']     = 'jwt_key'; // ID de la clé dans le Key module
+```
+
+### 2. Générer un JWT pour un utilisateur
+
+```php
+use Drupal\jwt\Authentication\Provider\JwtAuth;
+use Drupal\Core\Controller\ControllerBase;
+use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
+
+// src/Controller/JwtAuthController.php
+class JwtAuthController extends ControllerBase {
+
+  public function __construct(
+    private readonly JwtAuth $jwtAuth,
+  ) {}
+
+  /**
+   * Endpoint de login — retourne un JWT.
+   *
+   * Route : POST /api/auth/login
+   */
+  public function login(Request $request): JsonResponse {
+    $credentials = json_decode($request->getContent(), TRUE);
+
+    if (empty($credentials['username']) || empty($credentials['password'])) {
+      return new JsonResponse(['error' => 'Identifiants manquants.'], 400);
+    }
+
+    // Vérifier les credentials via le service auth Drupal
+    $uid = \Drupal::service('user.auth')
+      ->authenticate($credentials['username'], $credentials['password']);
+
+    if (!$uid) {
+      // Enregistrer la tentative échouée pour le rate limiting
+      \Drupal::flood()->register('jwt.failed_auth', 3600);
+      return new JsonResponse(['error' => 'Identifiants invalides.'], 401);
+    }
+
+    // Charger le compte et générer le JWT
+    $account = $this->entityTypeManager()->getStorage('user')->load($uid);
+    \Drupal::service('current_user')->setAccount($account);
+
+    // generateToken() signe le JWT avec la clé configurée
+    $token = $this->jwtAuth->generateToken();
+
+    if (!$token) {
+      return new JsonResponse(['error' => 'Impossible de générer le token.'], 500);
+    }
+
+    return new JsonResponse([
+      'token'      => $token,
+      'expires_in' => 3600,
+      'token_type' => 'Bearer',
+      'uid'        => $uid,
+    ]);
+  }
+}
+```
+
+### 3. Utiliser le JWT dans les requêtes frontend
+
+```javascript
+// Frontend JavaScript — stocker dans mémoire (pas localStorage pour éviter XSS)
+let jwtToken = null;
+
+// Login
+async function login(username, password) {
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+
+  if (!res.ok) throw new Error('Authentification échouée');
+
+  const data = await res.json();
+  jwtToken = data.token;   // Stocker en mémoire, pas localStorage
+
+  // Programmer le renouvellement avant expiration
+  setTimeout(renewToken, (data.expires_in - 60) * 1000);
+}
+
+// Requête JSON:API authentifiée avec JWT
+async function fetchArticles() {
+  const response = await fetch('/jsonapi/node/article', {
+    headers: {
+      'Authorization': `Bearer ${jwtToken}`,
+      'Content-Type': 'application/vnd.api+json',
+      'Accept': 'application/vnd.api+json',
+    },
+  });
+
+  if (response.status === 401) {
+    // Token expiré — rediriger vers le login
+    jwtToken = null;
+    window.location.href = '/login';
+    return;
+  }
+
+  return response.json();
+}
+```
+
+### 4. Valider un JWT custom dans un service PHP
+
+```php
+use Firebase\JWT\JWT;
+use Firebase\JWT\Key;
+use Firebase\JWT\ExpiredException;
+use Firebase\JWT\SignatureInvalidException;
+use Drupal\user\Entity\User;
+use Drupal\Core\Entity\EntityTypeManagerInterface;
+
+// Pour les projets sans module drupal/jwt — validation manuelle
+class JwtValidatorService {
+
+  public function __construct(
+    private readonly EntityTypeManagerInterface $entityTypeManager,
+  ) {}
+
+  /**
+   * Valider un JWT et retourner le compte utilisateur associé.
+   */
+  public function validateToken(string $token): ?\Drupal\Core\Session\AccountInterface {
+    $secret = getenv('JWT_SECRET');
+
+    if (!$secret) {
+      throw new \RuntimeException('JWT_SECRET non configuré dans les variables d\'environnement.');
+    }
+
+    try {
+      // Décoder et valider la signature + expiration automatiquement
+      $decoded = JWT::decode($token, new Key($secret, 'HS256'));
+
+      if (!isset($decoded->uid)) {
+        return NULL;
+      }
+
+      /** @var \Drupal\user\UserInterface|null $user */
+      $user = $this->entityTypeManager
+        ->getStorage('user')
+        ->load($decoded->uid);
+
+      // Vérifier que l'utilisateur est actif
+      if (!$user || !$user->isActive()) {
+        return NULL;
+      }
+
+      return $user;
+
+    } catch (ExpiredException $e) {
+      // Token expiré — ne pas logger (événement normal)
+      return NULL;
+    } catch (SignatureInvalidException $e) {
+      // Signature invalide — potentielle tentative de manipulation
+      \Drupal::logger('mon_module')->warning('JWT : signature invalide détectée.');
+      return NULL;
+    } catch (\Exception $e) {
+      \Drupal::logger('mon_module')->error('JWT validation error : @msg', ['@msg' => $e->getMessage()]);
+      return NULL;
+    }
+  }
+
+  /**
+   * Générer un JWT custom (sans module drupal/jwt).
+   *
+   * @param int $uid     UID de l'utilisateur
+   * @param int $ttl     Durée de validité en secondes (défaut : 3600)
+   */
+  public function generateToken(int $uid, int $ttl = 3600): string {
+    $secret = getenv('JWT_SECRET');
+    $now    = time();
+
+    $payload = [
+      'iss' => \Drupal::request()->getSchemeAndHttpHost(),  // Issuer
+      'aud' => \Drupal::request()->getSchemeAndHttpHost(),  // Audience
+      'iat' => $now,                                        // Issued At
+      'nbf' => $now,                                        // Not Before
+      'exp' => $now + $ttl,                                 // Expiration
+      'uid' => $uid,
+    ];
+
+    return JWT::encode($payload, $secret, 'HS256');
+  }
+}
+```
+
+### 5. Renouvellement de token (Refresh)
+
+```php
+// src/Controller/JwtRefreshController.php
+class JwtRefreshController extends ControllerBase {
+
+  public function __construct(
+    private readonly JwtValidatorService $jwtValidator,
+  ) {}
+
+  /**
+   * Renouveler un JWT valide (non expiré) avant son expiration.
+   *
+   * Route : POST /api/auth/refresh
+   * Header : Authorization: Bearer <token>
+   */
+  public function refresh(Request $request): JsonResponse {
+    $authHeader = $request->headers->get('Authorization', '');
+
+    if (!str_starts_with($authHeader, 'Bearer ')) {
+      return new JsonResponse(['error' => 'Token manquant.'], 401);
+    }
+
+    $token   = substr($authHeader, 7);
+    $account = $this->jwtValidator->validateToken($token);
+
+    if (!$account) {
+      return new JsonResponse(['error' => 'Token invalide ou expiré.'], 401);
+    }
+
+    // Générer un nouveau token
+    $new_token = $this->jwtValidator->generateToken($account->id());
+
+    return new JsonResponse([
+      'token'      => $new_token,
+      'expires_in' => 3600,
+    ]);
+  }
+}
+```
+
+### 6. Anti-patterns JWT
+
+| ❌ | ✅ | Raison |
+|----|----|--------|
+| Stocker le JWT dans `localStorage` | Mémoire JavaScript ou `httpOnly` cookie | XSS peut voler `localStorage` |
+| JWT sans expiration (`exp` absente) | Toujours définir `exp` (max 1h pour les access tokens) | Token valide indéfiniment si volé |
+| Algorithme `none` ou `HS256` avec secret court | `RS256` (clé RSA) ou `HS256` avec secret ≥ 256 bits | Attaque par force brute sur secret court |
+| Pas de vérification `iss` / `aud` | Valider `iss` et `aud` dans le payload | Token d'un autre service accepté |
+| JWT en GET param dans l'URL | Header `Authorization: Bearer` uniquement | URLs loguées par les proxies/serveurs |
+| Secret JWT dans le YAML de config Drupal | `getenv('JWT_SECRET')` via variable d'environnement | Secret versionné dans git |
+| Blacklist de tokens en base pour la révocation | Utiliser des refresh tokens courts + révocation par `jti` | Scalabilité : blacklist non scalable en cluster |
