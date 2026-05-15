@@ -319,3 +319,75 @@ $this->messenger()->addStatus(Markup::create(
   '<strong>Fait : ' . Html::escape($user_input) . '</strong>'
 ));
 ```
+
+---
+
+## `TrustedCallbackInterface` — Callbacks de Render Sécurisés
+
+Depuis D8.8, tout callback `#pre_render`, `#post_render` et `#lazy_builder` **doit** implémenter `TrustedCallbackInterface`. Sans elle, Drupal 10+ lance une `\BadFunctionCallException` ou un warning.
+
+```php
+// ❌ Callback non trusted — avertissement D10, exception D11
+$build['#pre_render'][] = 'mon_module_pre_render';           // Fonction globale
+$build['#pre_render'][] = [$objet, 'preRender'];             // Méthode non déclarée
+
+// ✅ Via classe implémentant TrustedCallbackInterface
+use Drupal\Core\Security\TrustedCallbackInterface;
+
+class MonPreRenderer implements TrustedCallbackInterface {
+
+  // Déclarer TOUTES les méthodes utilisées comme callbacks
+  public static function trustedCallbacks(): array {
+    return ['preRender', 'postRender'];
+  }
+
+  public static function preRender(array $build): array {
+    // Modifier le render array avant le rendu
+    if (isset($build['#node'])) {
+      $build['#attributes']['class'][] = 'node--' . $build['#node']->bundle();
+    }
+    return $build;
+  }
+
+  public static function postRender(string $markup, array $build): string {
+    // Modifier le HTML final — rarement nécessaire
+    return $markup;
+  }
+}
+
+// Utilisation
+$build['#pre_render'][] = [MonPreRenderer::class, 'preRender'];
+$build['#post_render'][] = [MonPreRenderer::class, 'postRender'];
+```
+
+### `#lazy_builder` — Render Asynchrone (BigPipe)
+
+```php
+// Pattern pour contenu dynamique non-cacheable
+$build['panier'] = [
+  '#lazy_builder' => [\Drupal\mon_module\LazyBuilders\PanierWidget::class . '::build', [$user_id]],
+  '#create_placeholder' => TRUE,  // BigPipe : rendu asynchrone
+];
+
+// La classe lazy builder DOIT aussi implémenter TrustedCallbackInterface
+class PanierWidget implements TrustedCallbackInterface {
+
+  public static function trustedCallbacks(): array {
+    return ['build'];
+  }
+
+  public static function build(int $user_id): array {
+    return [
+      '#theme' => 'panier_widget',
+      '#items' => static::loadCartItems($user_id),
+      '#cache' => [
+        'contexts' => ['user'],
+        'tags' => ['cart:' . $user_id],
+        'max-age' => 0,  // Toujours frais — lazy builder géré par BigPipe
+      ],
+    ];
+  }
+}
+```
+
+**Pourquoi c'est sécurité :** un callback arbitraire dans `#pre_render` pourrait exécuter n'importe quelle fonction PHP si injecté via une vulnérabilité. `TrustedCallbackInterface` crée une whitelist explicite des callbacks autorisés.

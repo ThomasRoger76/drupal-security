@@ -4,19 +4,19 @@
 
 ```bash
 # Vérifier tous les projets Drupal pour des vulnérabilités connues (D9+)
-ddev drush pm:security
+docker compose exec php drush pm:security
 
 # Exemple de sortie
 # [critical]  drupal/paragraphs  1.14  SA-CONTRIB-2023-003  Update immediately
 # [warning]   drupal/webform     6.1.0  SA-CONTRIB-2023-012  Update soon
 
 # Mettre à jour un module vulnérable
-ddev composer update drupal/paragraphs --with-dependencies
-ddev drush updb -y
-ddev drush cr
+docker compose exec php composer update drupal/paragraphs --with-dependencies
+docker compose exec php drush updb -y
+docker compose exec php drush cr
 
 # Vérifier avec format JSON (pour CI/CD)
-ddev drush pm:security --format=json
+docker compose exec php drush pm:security --format=json
 ```
 
 **Intégrer dans le pipeline CI/CD :**
@@ -88,13 +88,13 @@ security:composer:
 ```bash
 # Installer et activer
 composer require drupal/security_review
-ddev drush en security_review -y
+docker compose exec php drush en security_review -y
 
 # Lancer l'audit depuis Drush
-ddev drush secrev
+docker compose exec php drush secrev
 
 # Lancer avec output détaillé
-ddev drush secrev --log --skipped
+docker compose exec php drush secrev --log --skipped
 ```
 
 **Ce que Security Review vérifie :**
@@ -158,7 +158,7 @@ Header always set Content-Security-Policy "\
 
 ```bash
 composer require drupal/seckit
-ddev drush en seckit -y
+docker compose exec php drush en seckit -y
 # Configurer via /admin/config/system/seckit
 ```
 
@@ -223,8 +223,8 @@ $config['mon_module.settings']['api_key']  = getenv('MON_API_KEY');
 
 ```bash
 # Rapport de statut Drupal — vérifier les warnings sécurité
-ddev drush status
-ddev drush php:eval "
+docker compose exec php drush status
+docker compose exec php drush php:eval "
   \$requirements = [];
   foreach (\Drupal::moduleHandler()->getImplementations('requirements') as \$module) {
     \$requirements = array_merge(\$requirements, \Drupal::moduleHandler()->invoke(\$module, 'requirements', ['runtime']));
@@ -245,19 +245,19 @@ ddev drush php:eval "
 
 ```bash
 # 1. Vérifier les mises à jour disponibles
-ddev drush pm:security
-ddev composer outdated
+docker compose exec php drush pm:security
+docker compose exec php composer outdated
 
 # 2. Mettre à jour en sécurité
-ddev composer update drupal/core-recommended drupal/core-composer-scaffold --with-dependencies
+docker compose exec php composer update drupal/core-recommended drupal/core-composer-scaffold --with-dependencies
 
 # 3. Appliquer les updates DB et la config
-ddev drush updb -y
-ddev drush cim -y
-ddev drush cr
+docker compose exec php drush updb -y
+docker compose exec php drush cim -y
+docker compose exec php drush cr
 
 # 4. Tester avant de déployer
-ddev drush test:run --types=PHPUnit-Unit mon_module
+docker compose exec php drush test:run --types=PHPUnit-Unit mon_module
 
 # 5. Déployer
 git add . && git commit -m "security: update core to $(drush core:status --format=json | jq -r '.drupal-version')"
@@ -360,9 +360,40 @@ Header always set Content-Security-Policy "\
   font-src 'self' data:; \
   frame-ancestors 'self';"
 
-# ⚠️ 'unsafe-inline' ne peut pas être éliminé facilement sans modifier le core
-# Pour une CSP plus stricte : utiliser des nonces (nécessite contrib module)
+# ⚠️ 'unsafe-inline' ne peut pas être éliminé sans modifier le core
 ```
+
+### CSP avec Nonces — Stratégie plus stricte
+
+Pour éliminer `unsafe-inline`, utiliser des nonces. Drupal supporte ça via le module contrib `csp` (Content Security Policy) :
+
+```bash
+composer require drupal/csp
+docker compose exec php drush en csp -y
+```
+
+```php
+// settings.php — configuration CSP via module contrib
+// Après installation : /admin/config/system/csp
+// Le module génère automatiquement les nonces pour les scripts inline Drupal
+```
+
+```apache
+# CSP avec nonces (via module drupal/csp) — approche recommandée
+# Le module ajoute automatiquement le nonce aux scripts inline générés par Drupal
+# Ne pas écrire manuellement la CSP si le module csp est actif
+```
+
+**Compromis réaliste :**
+
+| Approche | Sécurité | Compatibilité Drupal | Effort |
+|----------|----------|---------------------|--------|
+| Sans CSP | ❌ | ✅ | 0 |
+| CSP avec `unsafe-inline` | 🟡 Moyen | ✅ | Faible |
+| CSP avec nonces (module `csp`) | ✅ Bon | ✅ | Moyen |
+| CSP stricte sans nonces | ✅ Élevé | ❌ Casse Drupal | Très élevé |
+
+**Recommandation :** installer `drupal/csp` et utiliser le mode `nonce` — c'est le seul moyen d'avoir une CSP stricte sans casser Drupal core.
 
 ---
 
@@ -421,10 +452,10 @@ function mon_module_page_attachments_alter(array &$attachments): void {
 
 ```bash
 # Automatiser avec un script de vérification
-ddev drush pm:security             # Modules vulnérables
+docker compose exec php drush pm:security             # Modules vulnérables
 composer audit --no-dev            # CVE dans les dépendances
-ddev drush secrev                  # Security Review module
-ddev drush php:eval "print \Drupal::config('system.logging')->get('error_level');"  # Doit être 'hide'
+docker compose exec php drush secrev                  # Security Review module
+docker compose exec php drush php:eval "print \Drupal::config('system.logging')->get('error_level');"  # Doit être 'hide'
 grep -r "trusted_host_patterns" web/sites/default/settings.php  # Doit être configuré
 ls web/sites/default/files/.htaccess  # Doit exister
 curl -I https://monsite.com | grep -E "X-Frame|X-Content|Strict-Transport"  # Headers sécurité

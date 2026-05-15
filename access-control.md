@@ -207,9 +207,9 @@ function mon_module_node_grants(AccountInterface $account, string $op): array {
 
 **Après modification des grants :** reconstruire les index avec :
 ```bash
-ddev drush php:eval "node_access_rebuild();"
+docker compose exec php drush php:eval "node_access_rebuild();"
 # OU
-ddev drush php:eval "\Drupal\node\NodeAccessRebuildBatch::run([]);"
+docker compose exec php drush php:eval "\Drupal\node\NodeAccessRebuildBatch::run([]);"
 ```
 
 ---
@@ -368,13 +368,13 @@ public function fetchExternalData(string $url): array {
 
 ```bash
 # Lister les permissions d'un rôle
-ddev drush role:perm:show editor
+docker compose exec php drush role:perm:show editor
 
 # Lister les utilisateurs avec un rôle
-ddev drush user:role:list editor
+docker compose exec php drush user:role:list editor
 
 # Vérifier qu'aucun rôle anonyme n'a des permissions excessives
-ddev drush php:eval "print_r(\Drupal\user\Entity\Role::load('anonymous')->getPermissions());"
+docker compose exec php drush php:eval "print_r(\Drupal\user\Entity\Role::load('anonymous')->getPermissions());"
 ```
 
 ```php
