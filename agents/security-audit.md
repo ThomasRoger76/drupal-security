@@ -52,8 +52,18 @@ Vérifier dans `settings.php` :
 
 ### Étape 4 — Headers HTTP
 ```bash
-curl -si https://$(docker compose exec php drush config:get system.site page.front | grep -o '[^/]*$').localhost | \
-  grep -E "X-Frame-Options|Content-Security-Policy|X-Content-Type-Options|Strict-Transport-Security"
+# Obtenir l'URL du site depuis settings.php ou drush
+SITE_URL=$(docker compose exec php drush php:eval "echo \Drupal::request()->getSchemeAndHttpHost();" 2>/dev/null | tr -d '\r\n')
+echo "Testing: $SITE_URL"
+
+# Vérifier les headers de sécurité HTTP
+curl -si "$SITE_URL" | grep -Ei "X-Frame-Options|Content-Security-Policy|X-Content-Type-Options|Strict-Transport-Security|Referrer-Policy|Permissions-Policy"
+
+# Headers attendus en production :
+# X-Frame-Options: SAMEORIGIN
+# X-Content-Type-Options: nosniff
+# Strict-Transport-Security: max-age=31536000; includeSubDomains
+# Referrer-Policy: strict-origin-when-cross-origin
 ```
 
 ### Étape 5 — Rapport priorisé
