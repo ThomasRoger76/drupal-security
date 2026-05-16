@@ -88,6 +88,12 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Renouvellement de token JWT | Endpoint `/api/auth/refresh` + validation du token existant | [jsonapi-oauth.md](jsonapi-oauth.md) |
 | Prévenir un Open Redirect via `?destination=` | `UrlHelper::isExternal()` + `redirect.destination` service | [access-control.md](access-control.md) |
 | Rate limiting / protection brute force | Service `flood` core + `\Drupal::flood()->isAllowed()` | [security-audit.md](security-audit.md) |
+| **Prendre l'identité d'un utilisateur (debug)** | `drupal/masquerade` — admin only, loggé dans watchdog | [access-control.md](access-control.md) |
+| **Délégation de gestion des rôles à des non-admin** | `drupal/role_delegation` — permission par rôle assignable | [access-control.md](access-control.md) |
+| **Protéger staging par Basic Auth (HTTP)** | `drupal/shield` — `shield.settings.yml` + credentials | [access-control.md](access-control.md) |
+| Chiffrer des données sensibles en base | `drupal/real_aes` + `drupal/encrypt` + `drupal/key` | [key-tfa.md](key-tfa.md) |
+| **2FA alternatif enterprise (SMS, SAML)** | `drupal/miniorange_2fa` — alternative à drupal/tfa | [key-tfa.md](key-tfa.md) |
+| Limiter les rôles assignables par les éditeurs | `drupal/role_delegation` + permissions granulaires | [access-control.md](access-control.md) |
 
 ## Anti-Patterns Critiques
 
@@ -97,6 +103,8 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | `$db->query("... WHERE uid = $uid")` | Placeholders `:uid` | SQL Injection |
 | `$user->id() == 1` | `$user->hasPermission('...')` | Bypass contrôle accès |
 | `$user->hasRole('administrator')` | `hasPermission()` spécifique | Contournement |
+| Masquerade en production sans log | Vérifier que watchdog trace les switch (`masquerade_switch`) | Impossible d'auditer qui a fait quoi |
+| `drupal/shield` avec credentials dans git | Variables d'environnement `SHIELD_USER` + `SHIELD_PASS` | Credentials exposés |
 | `#markup` avec input utilisateur non nettoyé | `#plain_text` ou `Markup::create()` | XSS |
 | `public://` pour fichiers confidentiels | `private://` + vérification des droits | Data breach |
 | Route d'action sans `_csrf_token: 'TRUE'` | Toujours pour les routes GET qui modifient | CSRF |
