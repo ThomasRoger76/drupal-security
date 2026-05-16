@@ -125,6 +125,19 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 - **[lessons.md](lessons.md)** — Failles trouvées en audit ou projet réel.
 - **[CHANGELOG.md](CHANGELOG.md)** — Historique des versions (v1.0 courante).
 
+## Complémentarité avec les Skills Sécurité Génériques
+
+> Ce skill est **différent** du skill `security-review` générique.
+
+| Skill | Rôle |
+|-------|------|
+| `security-review` | **Auditer** le code pour des vulnérabilités (code review générique) |
+| **`drupal-security`** | **Implémenter** la sécurité avec les APIs Drupal spécifiques (Twig auto-escape, EntityQuery placeholders, AccessResult avec cache, `hook_entity_access`, `trusted_host_patterns`) |
+
+**Workflow :** `security-review` détecte un problème d'accès → `drupal-security` explique comment le corriger avec `AccessResult::forbidden()->cachePerPermissions()` ou `hook_entity_access()`.
+
+---
+
 ## See Also
 
 - `drupal-core` — Permissions, routes, access checks côté module
