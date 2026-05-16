@@ -139,19 +139,41 @@ Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
 Header always set X-XSS-Protection "1; mode=block"
 ```
 
-### Content Security Policy (CSP)
+### Content Security Policy (CSP) — Spécificités Drupal
+
+**⚠️ Drupal impose des contraintes CSP particulières :**
+- `'unsafe-inline'` pour **script-src** : Drupal injecte des `drupalSettings` via `<script>` inline
+- `'unsafe-inline'` pour **style-src** : CKEditor 5 et quelques modules injectent du CSS inline
+- `'unsafe-eval'` : **NE PAS l'activer** — non requis par Drupal core moderne (seulement legacy jQuery)
 
 ```apache
-# CSP strict — adapter selon les ressources utilisées
+# CSP recommandée pour Drupal 10/11
+# À adapter selon les modules tiers (analytics, maps, CDN...)
 Header always set Content-Security-Policy "\
   default-src 'self'; \
-  script-src 'self' 'unsafe-inline' 'unsafe-eval'; \
+  script-src 'self' 'unsafe-inline'; \
   style-src 'self' 'unsafe-inline'; \
-  img-src 'self' data: blob:; \
-  font-src 'self'; \
+  img-src 'self' data: blob: https:; \
+  font-src 'self' data:; \
   connect-src 'self'; \
   frame-ancestors 'self'; \
-  base-uri 'self';"
+  base-uri 'self'; \
+  form-action 'self';"
+
+# Avec Google Fonts et Analytics (exemple réel) :
+# script-src 'self' 'unsafe-inline' https://www.googletagmanager.com;
+# style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+# font-src 'self' https://fonts.gstatic.com;
+# img-src 'self' data: blob: https://www.google-analytics.com;
+```
+
+**Tester la CSP sans la bloquer (Report-Only mode) :**
+```apache
+# Déployer d'abord en report-only pour voir les violations sans bloquer
+Header always set Content-Security-Policy-Report-Only "\
+  default-src 'self'; script-src 'self' 'unsafe-inline';"
+# → Violations loguées dans la console navigateur
+# → Basculer en Content-Security-Policy une fois validé
 ```
 
 ### Via le Module SecurityKit (contrib)
