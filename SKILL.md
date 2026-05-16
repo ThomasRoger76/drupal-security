@@ -86,8 +86,8 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Authentification JWT sans OAuth2 | Module `drupal/jwt` + `JwtAuth::generateToken()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
 | Valider un JWT custom (sans module contrib) | `Firebase\JWT\JWT::decode()` + vérif `uid` + `isActive()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
 | Renouvellement de token JWT | Endpoint `/api/auth/refresh` + validation du token existant | [jsonapi-oauth.md](jsonapi-oauth.md) |
-| Prévenir un Open Redirect via `?destination=` | `UrlHelper::isExternal()` + `redirect.destination` service | [security-audit.md](security-audit.md) |
-| Rate limiting / protection brute force | Module `flood_control` + `\Drupal::flood()->isAllowed()` | [access-control.md](access-control.md) |
+| Prévenir un Open Redirect via `?destination=` | `UrlHelper::isExternal()` + `redirect.destination` service | [access-control.md](access-control.md) |
+| Rate limiting / protection brute force | Service `flood` core + `\Drupal::flood()->isAllowed()` | [security-audit.md](security-audit.md) |
 
 ## Anti-Patterns Critiques
 

@@ -2,6 +2,24 @@
 
 ---
 
+## v1.2 — 2026-05-16
+
+**Bug corrigé (introduit lors de l'audit) :**
+- SKILL.md QDT : références de fichiers inversées pour Open Redirect et Rate Limiting
+  - Open Redirect → `access-control.md` (pas `security-audit.md`)
+  - Rate Limiting → `security-audit.md` (pas `access-control.md`)
+  Ces sections existent depuis v1.1 mais étaient pointées vers le mauvais fichier dans la QDT
+
+**Description frontmatter étendue :**
+- Ajout : JWT, RGPD/GDPR, TFA, Key module, OWASP Dependency-Check, Open Redirect, Trivy, rate limiting
+- Garantit le déclenchement du skill sur ces sujets déjà couverts dans les fichiers de référence
+
+**Quick Decision Table :**
+- Nouvelle entrée : Open Redirect via `?destination=` (→ `access-control.md` — correct)
+- Nouvelle entrée : Rate limiting / protection brute force (→ `security-audit.md` — correct)
+
+---
+
 ## v1.1 — 2026-05-14
 
 **Bugs corrigés :**
