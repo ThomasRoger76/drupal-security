@@ -1,6 +1,6 @@
 ---
 name: drupal-security
-description: Use when preventing XSS in Drupal (Twig auto-escaping, Xss::filter, Html::escape, #markup vs #plain_text), implementing CSRF protection (_csrf_token routing, X-CSRF-Token header for REST), configuring access control (hook_entity_access, node grants, AccessResult), preventing SQL injection (Database placeholders, EntityQuery, escapeLike), securing file uploads (public vs private filesystem, extension validation), or auditing Drupal security (drush pm:security, Security Review module, HTTP security headers) in Drupal 8-11+
+description: Use when preventing XSS in Drupal (Twig auto-escaping, Xss::filter, Html::escape, #markup vs #plain_text), implementing CSRF protection (_csrf_token routing, X-CSRF-Token header for REST), configuring access control (hook_entity_access, node grants, AccessResult), preventing SQL injection (Database placeholders, EntityQuery, escapeLike), securing file uploads (public vs private filesystem, extension validation), auditing Drupal security (drush pm:security, Security Review module, HTTP security headers, OWASP Dependency-Check), implementing OAuth2 or JWT authentication, managing API keys with the Key module, configuring Two-Factor Authentication (TFA), implementing RGPD/GDPR compliance (right to erasure, data portability, cookie consent), preventing Open Redirect attacks, or scanning Docker images for CVE with Trivy in Drupal 8-11+
 ---
 
 # Drupal Security — Référence Complète
@@ -86,6 +86,8 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Authentification JWT sans OAuth2 | Module `drupal/jwt` + `JwtAuth::generateToken()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
 | Valider un JWT custom (sans module contrib) | `Firebase\JWT\JWT::decode()` + vérif `uid` + `isActive()` | [jsonapi-oauth.md](jsonapi-oauth.md) |
 | Renouvellement de token JWT | Endpoint `/api/auth/refresh` + validation du token existant | [jsonapi-oauth.md](jsonapi-oauth.md) |
+| Prévenir un Open Redirect via `?destination=` | `UrlHelper::isExternal()` + `redirect.destination` service | [security-audit.md](security-audit.md) |
+| Rate limiting / protection brute force | Module `flood_control` + `\Drupal::flood()->isAllowed()` | [access-control.md](access-control.md) |
 
 ## Anti-Patterns Critiques
 
