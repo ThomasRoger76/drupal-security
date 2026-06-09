@@ -55,6 +55,7 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 | Bloquer l'accès à des entités selon logique métier | `hook_entity_access()` | [access-control.md](access-control.md) |
 | Accès multi-tenant par groupe/organisation | `hook_node_access_records()` | [access-control.md](access-control.md) |
 | Requête SQL sécurisée avec input utilisateur | Placeholders `:name` ou EntityQuery | [sql-injection.md](sql-injection.md) |
+| EntityQuery qui respecte les droits d'accès | `->accessCheck(TRUE)` (obligatoire depuis D9) | [sql-injection.md](sql-injection.md) |
 | LIKE sécurisé avec wildcard utilisateur | `$db->escapeLike($input)` | [sql-injection.md](sql-injection.md) |
 | ORDER BY dynamique sécurisé | Whitelist des colonnes autorisées | [sql-injection.md](sql-injection.md) |
 | Restreindre les types de fichiers uploadés | `file_validate_extensions()` | [file-upload-security.md](file-upload-security.md) |
@@ -101,6 +102,7 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 |---------------------|------------------|--------|
 | `{{ var\|raw }}` avec input utilisateur | `{{ var }}` (auto-escape) | XSS |
 | `$db->query("... WHERE uid = $uid")` | Placeholders `:uid` | SQL Injection |
+| `EntityQuery` sans `->accessCheck(TRUE)` | `->accessCheck(TRUE)` explicite | Fuite d'entités non autorisées (exception en D9+) |
 | `$user->id() == 1` | `$user->hasPermission('...')` | Bypass contrôle accès |
 | `$user->hasRole('administrator')` | `hasPermission()` spécifique | Contournement |
 | Masquerade en production sans log | Vérifier que watchdog trace les switch (`masquerade_switch`) | Impossible d'auditer qui a fait quoi |
@@ -131,7 +133,7 @@ Référentiel complet de la sécurité Drupal 8-11+ : XSS, CSRF, contrôle d'acc
 ## Auto-Amélioration
 
 - **[lessons.md](lessons.md)** — Failles trouvées en audit ou projet réel.
-- **[CHANGELOG.md](CHANGELOG.md)** — Historique des versions (v1.0 courante).
+- **[CHANGELOG.md](CHANGELOG.md)** — Historique des versions (v1.3 courante).
 
 ## Complémentarité avec les Skills Sécurité Génériques
 

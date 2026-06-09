@@ -51,32 +51,54 @@ function mon_module_jsonapi_node_filter_access(
 
 ### Restreindre les bundles exposés
 
-```php
-// Via jsonapi_extras (module contrib recommandé) :
-// Admin > Configuration > Web services > JSON:API > Resource overrides
+> **⚠️ `hook_jsonapi_resource_type_build_alter(array &$resource_types)` reçoit une
+> LISTE d'objets `ResourceTypeBuildEvent`/`ResourceType` — JAMAIS un tableau indexé
+> par nom (`$resource_types['node--internal_page']`). Itérer et appeler les méthodes
+> de l'objet. Ne jamais faire `unset($resource_types['...'])` ni
+> `unset(...->getFields()[...])` (« Can't use method return value in write context »).**
 
-// Via hook pour désactiver programmatiquement un bundle :
+```php
+use Drupal\jsonapi\ResourceType\ResourceTypeBuildEvent;
+
+// ❌ FAUX — $resource_types n'est PAS indexé par nom, unset() est sans effet
+// if (isset($resource_types['node--internal_page'])) { unset(...); }
+
+// ✅ Désactiver l'exposition d'un type via disableResourceType() (D9.3+)
 function mon_module_jsonapi_resource_type_build_alter(array &$resource_types): void {
-  // Désactiver l'exposition du type 'internal_page'
-  if (isset($resource_types['node--internal_page'])) {
-    $disabled = $resource_types['node--internal_page']->getDeserializationTargetClass();
-    // Supprimer complètement le type de l'API
-    unset($resource_types['node--internal_page']);
+  foreach ($resource_types as $resource_type) {
+    if ($resource_type instanceof ResourceTypeBuildEvent
+        && $resource_type->getResourceTypeName() === 'node--internal_page') {
+      $resource_type->disableResourceType();
+    }
   }
 }
+
+// ✅ Alternative recommandée : désactiver le type via jsonapi_extras (config UI
+//    exportable avec drush cex) — survit aux montées de version, pas de code custom.
 ```
 
 ### Exclure des champs sensibles
 
 ```php
-// Avec jsonapi_extras : désactiver les champs via l'interface admin
-// Ou via hook (natif D11+) :
+use Drupal\jsonapi\ResourceType\ResourceTypeBuildEvent;
+
+// ✅ Désactiver un champ sensible via disableField() sur l'event (D9.3+)
 function mon_module_jsonapi_resource_type_build_alter(array &$resource_types): void {
-  if (isset($resource_types['user--user'])) {
-    // Récupérer le type et retirer les champs sensibles
-    // Note : utiliser jsonapi_extras pour une gestion fine des champs
+  foreach ($resource_types as $resource_type) {
+    if (!$resource_type instanceof ResourceTypeBuildEvent
+        || $resource_type->getResourceTypeName() !== 'user--user') {
+      continue;
+    }
+    foreach ($resource_type->getFields() as $field) {
+      if (in_array($field->getInternalName(), ['mail', 'pass', 'field_api_key'], TRUE)) {
+        $resource_type->disableField($field);
+      }
+    }
   }
 }
+
+// ✅ Alternative la plus fiable : masquer les champs via jsonapi_extras (config
+//    versionnée). Préférable à du code custom pour une gestion fine et durable.
 ```
 
 > **Règle de sécurité :** Ne jamais exposer `mail`, `pass`, `field_api_key`, `field_stripe_customer_id` ou tout champ contenant des données personnelles sensibles via JSON:API sans contrôle d'accès explicite.

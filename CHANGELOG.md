@@ -2,6 +2,25 @@
 
 ---
 
+## v1.3 — 2026-06-09
+
+**Bugs corrigés (vrais défauts techniques D10/D11) :**
+- `jsonapi-oauth.md` : `hook_jsonapi_resource_type_build_alter()` traitait `$resource_types`
+  comme un tableau indexé par nom (`$resource_types['node--internal_page']`) avec `unset()` —
+  API inexistante et sans effet. Remplacé par l'itération de la liste d'objets
+  `ResourceTypeBuildEvent` + `disableResourceType()` / `disableField()` (D9.3+). Cette
+  contradiction avec `lessons.md` (leçon `unset()`) et `access-control.md` est levée.
+- `access-control.md` : même hook — `setFields([...$field->disabled()])` (lourd, signature
+  `getTypeName()`) aligné sur l'API event canonique `getResourceTypeName()` + `disableField()`.
+- `file-upload-security.md` : `file.mime_type.guesser->guess()` supprimé en D10 — remplacé
+  par `guessMimeType()` (Symfony MimeTypeGuesserInterface).
+
+**lessons.md :**
+- Leçon `unset()` JSON:API enrichie : liste d'events vs tableau indexé + bonne API.
+- Nouvelle leçon : `guess()` → `guessMimeType()` en D10/D11.
+
+---
+
 ## v1.2 — 2026-05-16
 
 **Bug corrigé (introduit lors de l'audit) :**

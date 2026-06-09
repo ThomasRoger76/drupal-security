@@ -233,21 +233,30 @@ docker compose exec php drush php:eval "\Drupal\node\NodeAccessRebuildBatch::run
 // UI : /admin/config/services/jsonapi → Resource types → Disable specific fields
 
 // Via code — hook_jsonapi_resource_type_build_alter() :
+// $resource_types est une LISTE d'objets ResourceTypeBuildEvent — JAMAIS un tableau
+// indexé par nom. On désactive un champ via $event->disableField($field) (D9.3+).
+use Drupal\jsonapi\ResourceType\ResourceTypeBuildEvent;
+
 function mon_module_jsonapi_resource_type_build_alter(array &$resource_types): void {
-  if (isset($resource_types['node--article'])) {
-    // Marquer le champ comme non-exposé (disabled)
-    $resource_type = $resource_types['node--article'];
-    $fields = $resource_type->getFields();
-    if (isset($fields['field_secret'])) {
-      // Créer un nouveau tableau de champs sans le champ secret
-      // L'API varie selon la version — utiliser la config UI en priorité
-      unset($resource_types['node--article']->getFields()['field_secret']);
+  foreach ($resource_types as $resource_type) {
+    if (!$resource_type instanceof ResourceTypeBuildEvent
+        || $resource_type->getResourceTypeName() !== 'node--article') {
+      continue;
+    }
+    foreach ($resource_type->getFields() as $field) {
+      // ❌ Ne JAMAIS faire unset($resource_type->getFields()['x']) :
+      //    « Can't use method return value in write context » (fatal).
+      if ($field->getInternalName() === 'field_secret') {
+        // disableField() marque le champ comme non exposé sur l'event.
+        $resource_type->disableField($field);
+      }
     }
   }
 }
 
-// Alternative plus fiable : configurer les champs disabled via
-// /admin/config/services/jsonapi et exporter avec drush cex
+// ✅ Alternative plus fiable et recommandée : configurer les champs disabled via
+// /admin/config/services/jsonapi (module jsonapi_extras) et exporter avec drush cex.
+// La config est versionnée et survit aux montées de version.
 ```
 
 **Permissions JSON:API importantes :**

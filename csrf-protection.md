@@ -52,18 +52,19 @@ Avec `_csrf_token: 'TRUE'`, Drupal vérifie le paramètre `?token=XXX` dans l'UR
 ```php
 use Drupal\Core\Url;
 
-// ✅ Générer l'URL avec token CSRF — query doit être un ARRAY ['token' => '...']
-$url = Url::fromRoute('mon_module.item_supprimer', ['item' => $item->id()], [
-  'query' => [
-    'token' => \Drupal::csrfToken()->get('mon_module.item_supprimer/' . $item->id()),
-  ],
-]);
+// ⚠️ La valeur du token attendue par `_csrf_token: 'TRUE'` est le PATH INTERNE de
+// la route (ce que vérifie CsrfAccessCheck), JAMAIS le nom de la route.
+// Path interne de /mon-module/{item}/supprimer pour item 42 → 'mon-module/42/supprimer'.
 
-// Ou en deux étapes
+// ✅ Méthode fiable — dériver le path interne depuis l'URL elle-même (en deux étapes)
 $url = Url::fromRoute('mon_module.item_supprimer', ['item' => $item->id()]);
 $url->setOption('query', [
   'token' => \Drupal::csrfToken()->get($url->getInternalPath()),
 ]);
+
+// ❌ FAUX — utiliser le nom de route comme valeur de token : le token généré ne
+//    validera jamais contre la route, accès systématiquement refusé en 403.
+// 'token' => \Drupal::csrfToken()->get('mon_module.item_supprimer/' . $item->id())
 
 // Via un render array link (recommandé — Drupal encode correctement)
 $build['supprimer'] = [
@@ -77,11 +78,12 @@ $build['supprimer'] = [
 
 ```php
 // Générer l'URL avec token en PHP (preprocess ou controller)
-$variables['delete_url'] = Url::fromRoute(
-  'mon_module.item_supprimer',
-  ['item' => $item->id()],
-  ['query' => ['token' => \Drupal::csrfToken()->get('mon_module.item_supprimer/' . $item->id())]]
-)->toString();
+// Le token utilise le PATH INTERNE via getInternalPath() — jamais le nom de route.
+$delete_url = Url::fromRoute('mon_module.item_supprimer', ['item' => $item->id()]);
+$delete_url->setOption('query', [
+  'token' => \Drupal::csrfToken()->get($delete_url->getInternalPath()),
+]);
+$variables['delete_url'] = $delete_url->toString();
 ```
 
 ```twig
@@ -102,7 +104,9 @@ Pour les routes sans `_csrf_token: 'TRUE'` ou les endpoints custom :
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 public function monAction(Request $request, MonItem $item): Response {
-  // Valider le token reçu en paramètre GET
+  // Valider le token reçu en paramètre GET.
+  // ⚠️ La chaîne $token_value DOIT être identique à celle utilisée lors du get()
+  //    qui a généré le lien. Ici c'est une valeur libre (route SANS _csrf_token).
   $token = $request->query->get('token', '');
   $token_value = 'mon_module/supprimer/' . $item->id();
 

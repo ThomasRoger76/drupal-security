@@ -246,17 +246,14 @@ $config['mon_module.settings']['api_key']  = getenv('MON_API_KEY');
 ```bash
 # Rapport de statut Drupal — vérifier les warnings sécurité
 docker compose exec php drush status
-docker compose exec php drush php:eval "
-  \$requirements = [];
-  foreach (\Drupal::moduleHandler()->getImplementations('requirements') as \$module) {
-    \$requirements = array_merge(\$requirements, \Drupal::moduleHandler()->invoke(\$module, 'requirements', ['runtime']));
-  }
-  foreach (\$requirements as \$key => \$req) {
-    if (isset(\$req['severity']) && \$req['severity'] >= 1) {
-      echo \$key . ': ' . strip_tags(\$req['description'] ?? '') . PHP_EOL;
-    }
-  }
-"
+
+# Lister les requirements runtime de sévérité >= warning (commande native Drush,
+# fonctionne D9-D11). Ne PAS utiliser getImplementations() en php:eval :
+# cette API du ModuleHandler est SUPPRIMÉE depuis Drupal 10.
+docker compose exec php drush core:requirements --severity=1 --format=table
+
+# Filtrer uniquement les requirements liés à la sécurité
+docker compose exec php drush core:requirements --severity=1 --filter=security
 
 # Ou via l'UI : /admin/reports/status
 ```
@@ -643,15 +640,16 @@ class GdprExportController extends ControllerBase {
   }
 
   private function getComments(UserInterface $user): array {
-    return \Drupal::entityTypeManager()
+    $comments = \Drupal::entityTypeManager()
       ->getStorage('comment')
-      ->loadByProperties(['uid' => $user->id()])
-      |> array_map(fn($c) => [
-        'id'       => $c->id(),
-        'date'     => date('Y-m-d', $c->getCreatedTime()),
-        'contenu'  => $c->get('comment_body')->value,
-        'noeud_id' => $c->getCommentedEntityId(),
-      ], $$);
+      ->loadByProperties(['uid' => $user->id()]);
+
+    return array_map(fn($c) => [
+      'id'       => (int) $c->id(),
+      'date'     => date('Y-m-d', $c->getCreatedTime()),
+      'contenu'  => $c->get('comment_body')->value,
+      'noeud_id' => $c->getCommentedEntityId(),
+    ], $comments);
   }
 
   private function getHistorique(UserInterface $user): array {

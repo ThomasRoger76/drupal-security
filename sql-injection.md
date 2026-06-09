@@ -103,6 +103,13 @@ $placeholders = implode(', ', array_fill(0, count($nids), '?'));
 
 **Zero SQL direct — toujours paramétré et sécurisé.**
 
+> **`->accessCheck(TRUE)` est OBLIGATOIRE depuis Drupal 9** — sans appel explicite
+> à `accessCheck()`, l'`EntityQuery` lève une exception. Ne jamais passer
+> `accessCheck(FALSE)` pour « faire taire » l'erreur : cela retourne TOUTES les
+> entités sans filtrer les droits (contenu non publié, privé, autres tenants).
+> Réserver `accessCheck(FALSE)` aux contextes purement système (cron, migration,
+> tâche admin de confiance) où l'absence de contrôle est intentionnelle et documentée.
+
 ```php
 // Requêtes simples
 $nids = $this->entityTypeManager

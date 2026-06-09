@@ -93,6 +93,36 @@ Après chaque faille trouvée ou incident :
 - **Correct :** `UrlHelper::isExternal($destination)` → si vrai, ignorer et rediriger vers `<front>`. Utiliser `\Drupal::service('redirect.destination')->getAsUrl()` qui valide automatiquement
 - **Prévention :** Toute redirection basée sur une URL fournie par l'utilisateur doit passer par `UrlHelper::isExternal()` avant usage
 
+### Token CSRF généré avec le nom de route au lieu du path interne — 403 systématique
+- **Symptôme :** Route protégée par `_csrf_token: 'TRUE'`, mais tous les liens renvoient 403 « Access denied » même pour un utilisateur autorisé
+- **Cause :** `\Drupal::csrfToken()->get('ma_route.name/' . $id)` utilise le NOM de route comme valeur de token. Or `CsrfAccessCheck` (core) calcule le token à partir du PATH INTERNE de la route — les deux valeurs ne correspondent jamais
+- **Correct :** Dériver le path interne : `$url = Url::fromRoute(...); $token = \Drupal::csrfToken()->get($url->getInternalPath());`
+- **Prévention :** Pour `_csrf_token: 'TRUE'`, toujours générer le token via `$url->getInternalPath()`. Pour la validation manuelle (route sans `_csrf_token`), `get()` et `validate()` doivent partager exactement la même chaîne
+
+### `unset($resource_types['node--x'])` dans `hook_jsonapi_resource_type_build_alter` — Sans effet / fatal
+- **Symptôme :** Le type ou le champ JSON:API reste exposé malgré le hook ; ou `Fatal error: Can't use method return value in write context`
+- **Cause :** Deux erreurs distinctes : (1) `$resource_types` est une LISTE d'objets `ResourceTypeBuildEvent`, PAS un tableau indexé par nom — `$resource_types['node--internal_page']` et `unset()` dessus n'ont aucun effet ; (2) `unset($resource_type->getFields()['x'])` écrit dans le retour d'une méthode → fatal
+- **Correct :** Itérer la liste, filtrer par `getResourceTypeName()`, puis appeler `$event->disableResourceType()` (type entier) ou `$event->disableField($field)` (champ). Alternative recommandée : masquer via la config jsonapi_extras versionnée
+- **Prévention :** Bannir l'indexation par nom et `unset(...->getX()[...])` en code review. Toujours itérer l'event et utiliser `disableField()`/`disableResourceType()`. Préférer jsonapi_extras pour une config exportable
+
+### `file.mime_type.guesser->guess()` en D10/D11 — Méthode supprimée
+- **Symptôme :** `Error: Call to undefined method ...::guess()` lors de la validation MIME d'un upload
+- **Cause :** La méthode `guess()` du guesser MIME (`Symfony\Component\Mime\MimeTypeGuesserInterface`) a été supprimée en Drupal 10 (renommée pour suivre Symfony)
+- **Correct :** `\Drupal::service('file.mime_type.guesser')->guessMimeType($uri)`
+- **Prévention :** Utiliser `guessMimeType()` partout. Ne pas copier d'anciens snippets D8/D9 reposant sur `guess()`
+
+### `\Drupal::moduleHandler()->getImplementations()` en D10+ — Méthode supprimée
+- **Symptôme :** `Error: Call to undefined method ...::getImplementations()` sur Drupal 10/11
+- **Cause :** `ModuleHandlerInterface::getImplementations()` a été supprimé en Drupal 10 (déprécié dès D9.4)
+- **Correct :** Utiliser la commande native `drush core:requirements --severity=1` pour lister les requirements ; en code, `invokeAllWith()` ou `hasImplementations()`
+- **Prévention :** Ne pas écrire de `php:eval` reposant sur des API du ModuleHandler dépréciées — privilégier les commandes Drush natives, stables entre versions majeures
+
+### Opérateur `|>` (pipe) et `$$` en PHP — Code qui ne parse pas
+- **Symptôme :** Erreur de syntaxe au chargement du fichier ; la méthode entière est inutilisable
+- **Cause :** L'opérateur pipe `|>` n'existe pas en PHP (proposition non adoptée) et `$$` n'est pas une variable valide — un snippet collé depuis un autre langage
+- **Correct :** Affecter le résultat à une variable nommée puis appliquer `array_map($cb, $variable)`
+- **Prévention :** `posttools-php-syntax` doit valider tout snippet PHP. Aucun opérateur exotique non standard dans les exemples
+
 ### Secrets dans les YAML exportés en git — Data breach
 - **Symptôme :** Clé API ou mot de passe visible dans `config/sync/*.yml` → exposé dans le dépôt git
 - **Cause :** La Config API exporte toute la config, y compris les champs de type `api_key` non protégés

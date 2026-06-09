@@ -97,7 +97,9 @@ function mon_module_valider_mime(FileInterface $file): array {
     'application/pdf',
   ];
 
-  $detected_mime = \Drupal::service('file.mime_type.guesser')->guess($file->getFileUri());
+  // ⚠️ D10/D11 : la méthode guess() a été supprimée — utiliser guessMimeType()
+  // (Symfony\Component\Mime\MimeTypeGuesserInterface). guess() ne fonctionne plus.
+  $detected_mime = \Drupal::service('file.mime_type.guesser')->guessMimeType($file->getFileUri());
 
   if (!in_array($detected_mime, $allowed_mimes, TRUE)) {
     $errors[] = t('Le type de fichier @mime n\'est pas autorisé.', ['@mime' => $detected_mime]);

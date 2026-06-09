@@ -18,15 +18,18 @@ cd ~/.claude/skills/drupal-security && git pull
 
 ## Fichiers inclus
 
-- CHANGELOG.md
 - SKILL.md
 - access-control.md
 - csrf-protection.md
 - file-upload-security.md
-- lessons.md
+- jsonapi-oauth.md
+- key-tfa.md
 - security-audit.md
 - sql-injection.md
 - xss-prevention.md
+- agents/security-audit.md
+- lessons.md
+- CHANGELOG.md
 
 ## Suite des skills Drupal
 
